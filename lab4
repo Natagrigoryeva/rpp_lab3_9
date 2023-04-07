@@ -1,15 +1,13 @@
 from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import Message
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils import executor
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
 
-import logging
 import os
-
-logging.basicConfig(level=logging.INFO)
+import logging
 
 # Получение токена из переменных окружения
 bot_token = os.getenv('API_TOKEN')
@@ -20,62 +18,86 @@ bot = Bot(token=bot_token)
 # Инициализация диспетчера команд
 dp = Dispatcher(bot, storage=MemoryStorage())
 
+# Активация системы логирования
+logging.basicConfig(level=logging.INFO)
+
+# Сохранённая база
+saved_data = {}
+
 
 # Форма, которая хранит информацию о пользователе
 class Form(StatesGroup):
-    name = State()
-    cash = State()
+    name = State()  # Поле в котором хранится имя валюты
+    money = State()
 
-class Form2(StatesGroup):
-    name2 = State()
-    sum = State()
 
-# Обработка команды /start
-@dp.message_handler(commands=['save_currency'])
+# Форма, которая хранит информацию о пользователе
+class Form1(StatesGroup):
+    name1 = State()  # Поле в котором хранится имя валюты
+    money1 = State()
+
+
+# Обработчик комманды /start
+@dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
+    await message.reply("Привет! Я бот, который конвертирует валюты")
+
+
+# Обработчик комманды /save_currency (Пользователь вводит название валюты)
+@dp.message_handler(commands=['save_currency'])
+async def process_start_command(message: Message):
     await Form.name.set()
-    await message.reply('Введите название валюты')
+    await message.reply("Введите название валюты")
 
 
-# обработка введенного имени
+# После ввода названия валюты бот предлагает ввести курс валюты к рублю
 @dp.message_handler(state=Form.name)
-async def process_name(message: types.Message, state: FSMContext):
+async def process_name(message: Message, state: FSMContext):
     await state.update_data(name=message.text)
-    user_data = await state.get_data()
-    await Form.cash.set()
-    await message.reply('Курс валюты к рублю')
+    course = await state.get_data()
+    await Form.money.set()
+    await message.reply("Введите курс " + course['name'] + " к рублю")
 
 
-@dp.message_handler(state=Form.cash)
-async def process_cash(message: types.Message, state: FSMContext):
-    await state.update_data(cash=message.text)
+#  Программа сохраняет название валюты и курс в словарь
+@dp.message_handler(state=Form.money)
+async def process_money(message: types.Message, state: FSMContext):
+    await state.update_data(money=message.text)
     user_data = await state.get_data()
+    saved_data['form1'] = user_data
     await state.finish()
-    await message.reply('Курс валюты сохранен')
+    await message.reply("Курс валюты сохранен")
 
 
+# Обработчик комманды /convert (После ввода команды /convert бот предлагает ввести название валюты)
 @dp.message_handler(commands=['convert'])
 async def start_command2(message: types.Message):
-    await Form.name2.set()
+    await Form1.name1.set()
     await message.reply('Введите название валюты')
 
 
-@dp.message_handler(state=Form2.name2)
-async def process_name2(message: types.Message, state: FSMContext):
-    await state.update_data(name2=message.text)
-    user_data = await state.get_data()
-    await Form.sum.set()
-    await message.reply('Количество валюты')
+# После ввода названия валюты бот предлагает ввести сумму в указанной валюте
+@dp.message_handler(state=Form1.name1)
+async def process_name2(message: Message, state: FSMContext):
+    await state.update_data(name1=message.text)
+    course1 = await state.get_data()
+    await Form1.money1.set()
+    await message.reply("Введите сумму в валюте " + course1['name1'])
 
 
-@dp.message_handler(state=Form2.sum)
-async def process_sum(message: types.Message, state: FSMContext):
-    await state.update_data(sum=message.text)
-    user_data = await state.get_data()
-    await message.reply(user_data['sum'] / user_data['cash'])
+# Бот конвертирует указанную пользователем сумму в рубли по ранее сохраненному курсу выбранной валюты
+@dp.message_handler(state=Form1.money1)
+async def process_convert(message: types.Message, state: FSMContext):
+    await state.update_data(money1=message.text)
+    user_data2 = await state.get_data()
+    await message.reply(int(user_data2['money1']) * float(saved_data['form1']['money']))
 
 
 # Точка входа в приложение
 if __name__ == '__main__':
+    # Инициализация системы логирования
+    logging.basicConfig(level=logging.INFO)
+    # Подключение системы логирования к боту
     dp.middleware.setup(LoggingMiddleware())
+    # Запуск обработки сообщений
     executor.start_polling(dp, skip_updates=True)
